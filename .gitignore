@@ -1,4 +1,3 @@
-work/data/*
-work/.ipynb_checkpoints/
-work/state/manifest.json
+data/*
+.ipynb_checkpoints/
 .env
