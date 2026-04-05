@@ -102,17 +102,21 @@ Watermark: Silver applies a 45-day watermark on pickup_ts. This tells Spark how 
 
 ## 4. Gold table partitioning strategy
 
-_Explain your partitioning choice. Why this column(s)? What query patterns does it optimize?_
-_Show the Iceberg snapshot history (query output or screenshot)._
+The gold table is intentionally left unpartitioned. At most 265 zones x 24 hours yields 6,360 rows, making full scans near-instant and partitioning overhead unjustified. The typical query pattern - aggregating across all zones for a given hour or vice versa - would touch most partitions anyway. Pruning provides no benefit at this scale. If the table were extended to track counts per day, partitioning by a date bucket would become worthwhile, but at the current scope it is unnecessary overhead.
+
+The snapshot history of the gold table shows each micro-batch commit as a separate Iceberg snapshot, with a unique `snapshot_id`, `made_current_at` timestamp, and `is_current_ancestor` flag indicating the active lineage.
+
+![Iceberg snapshot history](screenshots/snapshots.png)
 
 ## 5. Restart proof
 
-_Show that stopping and restarting the pipeline does not produce duplicates._
-_Include row counts before and after restart._
+The bronze query was stopped after ingesting an initial batch of rows, then restarted from the same checkpoint. The row count before and after restart is identical, confirming that no duplicate rows were added.
+
+![Restart proof — row counts before and after](screenshots/restart.png)
 
 ## 6. Custom scenario
 
-_Explain and/or show how you solved the custom scenario from the GitHub issue._
+The custom scenario required adding a peak-hour flag to the silver layer and building a gold aggregation table split by peak vs non-peak trips. `is_peak_hour` is derived in the silver layer as `true` when the pickup hour falls between 7–9 or 16–19 inclusive. The gold table groups trips by `pickup_zone` and `pickup_hour`, counting peak and non-peak trips separately via a `MERGE INTO` upsert. The peak hour share across all trips is 38.63% .
 
 ## 7. How to run
 
@@ -120,13 +124,19 @@ _Explain and/or show how you solved the custom scenario from the GitHub issue._
 # Step 1: Start infrastructure
 docker compose up -d
 
-# Step 2: Start the producer
-python produce.py
+# Step 2: Create the Kafka topic
+docker exec kafka sh -c "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic taxi-trips --partitions 3 --replication-factor 1"
 
-# Step 3: Run the pipeline
-<your command here>
+# Step 3: Start the producer
+docker exec project2_jupyter python /home/jovyan/project/produce.py --loop
+
+# Step 4: Run the playbook
+# Run the cells in Project-2.ipynb
 ```
 
-_Add any additional steps or dependencies needed to reproduce your results._
-
-_Include the `.env` values the grader should use to run your project._
+Values for env file:
+```
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=changeme
+JUPYTER_TOKEN=changeme
+```
